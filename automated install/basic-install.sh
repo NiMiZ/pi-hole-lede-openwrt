@@ -149,7 +149,7 @@ elif command -v rpm &> /dev/null; then
 
 elif command -v opkg &> /dev/null; then
   # OpenWRT family
-
+  runUnattended=true
   PKG_MANAGER="opkg"
   UPDATE_PKG_CACHE="test_opkg_lock; ${PKG_MANAGER} update"
   PKG_INSTALL=(${PKG_MANAGER} install)
@@ -157,12 +157,12 @@ elif command -v opkg &> /dev/null; then
   PKG_COUNT="echo 0"
 
   # #########################################
-  INSTALLER_DEPS=(git ip-full shadow-useradd whiptail)
+  INSTALLER_DEPS=(git ip-full shadow-useradd)
   PIHOLE_DEPS=(bc curl sudo unzip lsof netcat bind-dig)
   PIHOLE_WEB_DEPS=(lighttpd php7 php7-cgi)
   LIGHTTPD_USER="http"
   LIGHTTPD_GROUP="www-data"
-  LIGHTTPD_CFG="lighttpd.conf.debian"
+  LIGHTTPD_CFG="lighttpd.conf"
   DNSMASQ_USER="dnsmasq"
 
   test_opkg_lock() {

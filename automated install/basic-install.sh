@@ -132,7 +132,7 @@ elif command -v rpm &> /dev/null; then
     PKG_MANAGER="yum"
   fi
 
-# Fedora and family update cache on every PKG_INSTALL call, no need for a separate update.
+  # Fedora and family update cache on every PKG_INSTALL call, no need for a separate update.
   UPDATE_PKG_CACHE=":"
   PKG_INSTALL=(${PKG_MANAGER} install -y)
   PKG_COUNT="${PKG_MANAGER} check-update | egrep '(.i686|.x86|.noarch|.arm|.src)' | wc -l"
@@ -157,7 +157,7 @@ elif command -v opkg &> /dev/null; then
   PKG_COUNT="0"
 
   # #########################################
-  INSTALLER_DEPS=(git ip-full shadow-useradd dhcpcd whiptail)
+  INSTALLER_DEPS=(git ip-full shadow-useradd whiptail)
   PIHOLE_DEPS=(bc curl sudo unzip lsof netcat bind-dig)
   PIHOLE_WEB_DEPS=(lighttpd php7 php7-cgi)
   LIGHTTPD_USER="http"
@@ -443,7 +443,24 @@ setStaticIPv4() {
   local IFCFG_FILE
   local IPADDR
   local CIDR
-  if [[ -f /etc/dhcpcd.conf ]]; then
+  if [[ -f /etc/config/network ]]; then
+    # OpenWRT family
+    local ifname=$(uci show network | grep [.]ifname= | grep ${PIHOLE_INTERFACE} | cut -d '.' -f 2)
+    local proto=$(uci get network.${ifname}.proto)
+    local currip=$(uci get network.${ifname}.ipaddr)
+    if [ "$proto" == "static" ] && [ "$currip" == "$IPV4_ADDRESS" ]; then
+        echo "::: Static IP already configured"
+    else
+        uci set network.${ifname}.proto=static
+        uci set network.${ifname}.ipaddr=${IPV4_ADDRESS}
+        uci commit network
+        # given this is almost certainly going to be executed via ssh, dont apply change now
+        # because applying the change will kill the script
+        echo ":::"
+        echo "::: Setting IP to ${IPV4_ADDRESS}.  You may need to restart after the install is complete."
+        echo ":::"
+    fi
+  elif [[ -f /etc/dhcpcd.conf ]]; then
     # Debian Family
     if grep -q "${IPV4_ADDRESS}" /etc/dhcpcd.conf; then
       echo "::: Static IP already configured"
@@ -764,8 +781,10 @@ stop_service() {
   echo -n "::: Stopping ${1} service..."
   if command -v systemctl &> /dev/null; then
     systemctl stop "${1}" &> /dev/null || true
-  else
+  elif command -v service &> /dev/null; then
     service "${1}" stop &> /dev/null || true
+  else
+    /etc/init.d "${1}" stop &> /dev/null || true
   fi
   echo " done."
 }
@@ -777,8 +796,10 @@ start_service() {
   echo -n "::: Starting ${1} service..."
   if command -v systemctl &> /dev/null; then
     systemctl restart "${1}" &> /dev/null
-  else
+  elif command -v service &> /dev/null; then
     service "${1}" restart &> /dev/null
+  else
+    /etc/init.d "${1}" restart
   fi
   echo " done."
 }
@@ -789,8 +810,10 @@ enable_service() {
   echo -n "::: Enabling ${1} service to start on reboot..."
   if command -v systemctl &> /dev/null; then
     systemctl enable "${1}" &> /dev/null
-  else
+  elif command -v update-rc.d &> /dev/null; then
     update-rc.d "${1}" defaults &> /dev/null
+  else
+    /etc/init.d "${1}" enable
   fi
   echo " done."
 }
@@ -859,24 +882,38 @@ install_dependent_packages() {
       debconf-apt-progress -- "${PKG_INSTALL[@]}" "${installArray[@]}"
       return
     fi
-      return 0
-  fi
-
-  #Fedora/CentOS
-  for i in "${argArray1[@]}"; do
-    echo -n ":::    Checking for $i..."
-    if ${PKG_MANAGER} -q list installed "${i}" &> /dev/null; then
-      echo " installed!"
-    else
-      echo " added to install list!"
-      installArray+=("${i}")
+  elif [[ -f /etc/opkg.conf ]]; then
+      # OpenWRT
+      for i in "${argArray1[@]}"; do
+        echo -n ":::    Checking for $i..."
+        if ${PKG_MANAGER} list-installed | cut -d ' ' -f 1 | grep "\b${i}\b" &> /dev/null; then
+          echo " installed!"
+        else
+          echo " added to install list!"
+          installArray+=("${i}")
+        fi
+      done
+      if [[ ${#installArray[@]} -gt 0 ]]; then
+        "${PKG_INSTALL[@]}" "${installArray[@]}" &> /dev/null
+      return
     fi
-  done
+  else
+    #Fedora/CentOS
+    for i in "${argArray1[@]}"; do
+      echo -n ":::    Checking for $i..."
+      if ${PKG_MANAGER} -q list installed "${i}" &> /dev/null; then
+        echo " installed!"
+      else
+        echo " added to install list!"
+        installArray+=("${i}")
+      fi
+    done
     if [[ ${#installArray[@]} -gt 0 ]]; then
       "${PKG_INSTALL[@]}" "${installArray[@]}" &> /dev/null
       return
     fi
-    return 0
+  fi
+  return 0
 }
 
 CreateLogFile() {
@@ -1273,7 +1310,12 @@ FTLdetect() {
 
   machine=$(uname -m)
 
-  if [[ $machine == arm* || $machine == *aarch* ]]; then
+  if [[ $machine == mips ]]; then
+    # MIPS (probably OpenWRT)
+    echo ":::  Detected MIPS architecture"
+    echo ":::  No working FTL binary exists for this architecture. Skipping..."
+    return 1 # no binary available
+  elif [[ $machine == arm* || $machine == *aarch* ]]; then
     # ARM
     local rev=$(uname -m | sed "s/[^0-9]//g;")
     local lib=$(ldd /bin/ls | grep -E '^\s*/lib' | awk '{ print $1 }')

@@ -147,6 +147,34 @@ elif command -v rpm &> /dev/null; then
     LIGHTTPD_CFG="lighttpd.conf.fedora"
     DNSMASQ_USER="nobody"
 
+elif command -v opkg &> /dev/null; then
+  # OpenWRT family
+
+  PKG_MANAGER="opkg"
+  UPDATE_PKG_CACHE="test_opkg_lock; ${PKG_MANAGER} update"
+  PKG_INSTALL=(${PKG_MANAGER} install)
+  # updating pre-installed packages should be avoided on OpenWRT
+  PKG_COUNT="0"
+
+  # #########################################
+  INSTALLER_DEPS=(git ip-full shadow-useradd dhcpcd whiptail)
+  PIHOLE_DEPS=(bc curl sudo unzip lsof netcat bind-dig)
+  PIHOLE_WEB_DEPS=(lighttpd php7 php7-cgi)
+  LIGHTTPD_USER="http"
+  LIGHTTPD_GROUP="www-data"
+  LIGHTTPD_CFG="lighttpd.conf.debian"
+  DNSMASQ_USER="dnsmasq"
+
+  test_opkg_lock() {
+    i=0
+    while [ -e /usr/lib/opkg/lock ]; do
+      sleep 0.5
+      ((i=i+1))
+    done
+    # Always return success, since we only return if there is no
+    # lock (anymore)
+    return 0
+  }
 else
   echo "OS distribution not supported"
   exit

@@ -154,7 +154,7 @@ elif command -v opkg &> /dev/null; then
   UPDATE_PKG_CACHE="test_opkg_lock; ${PKG_MANAGER} update"
   PKG_INSTALL=(${PKG_MANAGER} install)
   # updating pre-installed packages should be avoided on OpenWRT
-  PKG_COUNT="0"
+  PKG_COUNT="echo 0"
 
   # #########################################
   INSTALLER_DEPS=(git ip-full shadow-useradd whiptail)
